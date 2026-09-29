@@ -2,8 +2,8 @@ import csv
 import unittest
 from pathlib import Path
 
-from matching import (HIGH_VOLUME_ROWS, can_merge, cluster, load_aliases, resolve,
-                      suggest_merges)
+from matching import (HIGH_VOLUME_ROWS, can_merge, cluster, load_aliases, plan_incremental,
+                      resolve, suggest_merges)
 
 DATA = Path(__file__).resolve().parents[1] / "data"
 
@@ -101,6 +101,51 @@ class ClusterTests(unittest.TestCase):
         assigned, _ = cluster(list(rows), rows)
         self.assertEqual(assigned["ORION FUNDING GROUP"][0], "ORION FUNDING")
         self.assertNotIn("ORION FUNDING GROUP WEST", assigned)
+
+
+class IncrementalTests(unittest.TestCase):
+    """Tables are plain lists here; each run appends the plan in its write order."""
+
+    NEW_NAMES = {"Zephyr Loans": 12, "Zephyr Loan": 2, "Orion Fundin": 3, "Northwind Kapitol": 4}
+
+    def setUp(self):
+        raw_counts, lookup = read_sample()
+        full = resolve(raw_counts, lookup)
+        self.start = {"canonicals": full.canonicals, "review": full.review,
+                      "aliases": full.aliases, "normalized": full.normalized}
+        self.raw_counts = {**raw_counts, **self.NEW_NAMES}
+
+    def run_incremental(self, tables, fail_after=None):
+        done = {row["raw_name"] for row in tables["normalized"]}
+        plan = plan_incremental(
+            {name: n for name, n in self.raw_counts.items() if name not in done},
+            [(c["canonical_id"], c["canonical_name"], c["tier"]) for c in tables["canonicals"]],
+            {a["normalized_name"]: a["canonical_name"] for a in tables["aliases"]},
+            {r["normalized_name"] for r in tables["review"]},
+        )
+        for step, (table, rows) in enumerate(plan.items()):
+            if step == fail_after:
+                raise RuntimeError(f"write to {table} failed")
+            tables[table] = tables[table] + rows
+
+    def test_new_names_are_added(self):
+        tables = dict(self.start)
+        self.run_incremental(tables)
+        aliases = {a["normalized_name"]: a for a in tables["aliases"]}
+        self.assertEqual(aliases["ZEPHYR LOAN"]["canonical_name"], "ZEPHYR LOANS")
+        self.assertEqual(aliases["ORION FUNDIN"]["canonical_name"], "ORION FUNDING")
+        self.assertEqual(aliases["NORTHWIND KAPITOL"]["tier"], "REVIEW")
+        self.assertEqual(len(tables["review"]), len(self.start["review"]) + 1)
+
+    def test_rerun_after_any_failed_write_matches_a_clean_run(self):
+        clean = dict(self.start)
+        self.run_incremental(clean)
+        for fail_after in range(1, 4):
+            tables = dict(self.start)
+            with self.assertRaises(RuntimeError):
+                self.run_incremental(tables, fail_after)
+            self.run_incremental(tables)
+            self.assertEqual(tables, clean, f"failed after write {fail_after}")
 
 
 class SuggestTests(unittest.TestCase):

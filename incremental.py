@@ -2,11 +2,19 @@
 
 New COMPANY values are matched against the existing lookup and appended.
 Existing mappings are left alone; row counts on existing canonicals are
-refreshed the next time main.py runs.
+refreshed the next time main.py runs. If a run fails partway, run it again
+(see matching.plan_incremental).
 """
 
 import db
-from matching import COLUMNS, resolve
+from matching import COLUMNS, plan_incremental
+
+TABLES = {
+    "canonicals": db.CANONICALS,
+    "review": db.REVIEW_QUEUE,
+    "aliases": db.ALIAS_MAP,
+    "normalized": db.NORMALIZED,
+}
 
 
 def main():
@@ -26,35 +34,21 @@ def main():
             return
         print(f"Found {len(raw_counts):,} new COMPANY values")
 
-        mapped = dict(db.query(conn, f"SELECT NORMALIZED_NAME, CANONICAL_NAME FROM {db.table(db.ALIAS_MAP)}"))
         canonicals = db.query(conn, f"SELECT CANONICAL_ID, CANONICAL_NAME, TIER FROM {db.table(db.CANONICALS)}")
-        ids = {name: cid for cid, name, _ in canonicals}
-        # Curated creditors can match even if no source name maps to them yet.
-        lookup = {**{name: name for _, name, tier in canonicals if tier == "VERIFIED"}, **mapped}
+        mapped = dict(db.query(conn, f"SELECT NORMALIZED_NAME, CANONICAL_NAME FROM {db.table(db.ALIAS_MAP)}"))
+        queued = set()
+        if db.table_exists(conn, db.REVIEW_QUEUE):
+            queued = {name for (name,) in db.query(
+                conn, f"SELECT NORMALIZED_NAME FROM {db.table(db.REVIEW_QUEUE)}")}
 
-        result = resolve(raw_counts, lookup, db.load_overrides(conn))
-
-        new_canonicals = [c for c in result.canonicals if c["canonical_name"] not in ids]
-        next_id = max(ids.values(), default=0) + 1
-        for offset, row in enumerate(new_canonicals):
-            row["canonical_id"] = next_id + offset
-            ids[row["canonical_name"]] = row["canonical_id"]
-
-        new_aliases = [a for a in result.aliases if a["normalized_name"] not in mapped]
-        for row in new_aliases:
-            row["canonical_id"] = ids[row["canonical_name"]]
-
-        db.write_table(conn, db.CANONICALS, new_canonicals, COLUMNS["canonicals"], replace=False)
-        db.write_table(conn, db.ALIAS_MAP, new_aliases, COLUMNS["aliases"], replace=False)
-        db.write_table(conn, db.REVIEW_QUEUE, result.review, COLUMNS["review"], replace=False)
-        # Written last: this table is how the next run knows a name was handled.
-        # If an earlier write fails, those names are picked up again next time.
-        db.write_table(conn, db.NORMALIZED, result.normalized, COLUMNS["normalized"], replace=False)
+        plan = plan_incremental(raw_counts, canonicals, mapped, queued, db.load_overrides(conn))
+        for key, rows in plan.items():  # plan is already in write order
+            db.write_table(conn, TABLES[key], rows, COLUMNS[key], replace=False)
     finally:
         conn.close()
 
-    print(f"Added {len(new_aliases):,} names to the alias map, "
-          f"{len(new_canonicals):,} new canonicals, {len(result.review):,} for review")
+    print(f"Added {len(plan['aliases']):,} names to the alias map, "
+          f"{len(plan['canonicals']):,} new canonicals, {len(plan['review']):,} for review")
 
 
 if __name__ == "__main__":

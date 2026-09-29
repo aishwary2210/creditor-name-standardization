@@ -220,6 +220,43 @@ def resolve(raw_counts, lookup, overrides=None):
     return Result(normalized, aliases, canonicals, review, candidate_pairs)
 
 
+def plan_incremental(raw_counts, canonicals, mapped, queued, overrides=None):
+    """Work out what an incremental run should append.
+
+    raw_counts: {raw name: source rows} for names not yet in CREDITORS_NORMALIZED
+    canonicals: [(id, name, tier)] already in CANONICAL_CREDITORS
+    mapped:     {normalized name: canonical} already in CREDITOR_ALIAS_MAP
+    queued:     normalized names already in CREDITOR_REVIEW_QUEUE
+
+    Returns {table: rows}, in the order the tables must be written. Rows an
+    earlier, interrupted run already wrote are skipped, so rerunning after a
+    failure never drops or duplicates anything. The review queue comes before
+    the alias map because a mapped name is treated as known and would not be
+    queued again; CREDITORS_NORMALIZED comes last because it marks a raw name
+    as done.
+    """
+    ids = {name: cid for cid, name, _ in canonicals}
+    # Curated creditors can match even if no source name maps to them yet.
+    lookup = {**{name: name for _, name, tier in canonicals if tier == "VERIFIED"}, **mapped}
+    result = resolve(raw_counts, lookup, overrides)
+
+    next_id = max(ids.values(), default=0) + 1
+    new_canonicals = []
+    for row in result.canonicals:
+        if row["canonical_name"] not in ids:
+            ids[row["canonical_name"]] = next_id
+            new_canonicals.append({**row, "canonical_id": next_id})
+            next_id += 1
+
+    return {
+        "canonicals": new_canonicals,
+        "review": [row for row in result.review if row["normalized_name"] not in queued],
+        "aliases": [{**row, "canonical_id": ids[row["canonical_name"]]}
+                    for row in result.aliases if row["normalized_name"] not in mapped],
+        "normalized": result.normalized,
+    }
+
+
 def suggest_merges(canonicals, review, decided=()):
     """Suggest merges for names the automatic steps left on their own.
 

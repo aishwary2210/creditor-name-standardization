@@ -77,5 +77,7 @@ def write_table(conn, name, rows, columns, replace):
         return
     df = pd.DataFrame(rows, columns=columns)
     df.columns = [c.upper() for c in df.columns]
-    write_pandas(conn, df, name, database=DATABASE, schema=SCHEMA,
-                 auto_create_table=True, overwrite=replace)
+    success, _, written, _ = write_pandas(conn, df, name, database=DATABASE, schema=SCHEMA,
+                                          auto_create_table=True, overwrite=replace)
+    if not success or written != len(df):
+        raise RuntimeError(f"Wrote {written:,} of {len(df):,} rows to {name}")
