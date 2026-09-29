@@ -1,12 +1,18 @@
 # Creditor name standardization
 
-A small, runnable portfolio version of a creditor name resolution workflow. The included names and counts are fictional. This repository does not contain employer data, credentials, or the original production alias list.
+At work, I built a Snowflake creditor lookup to make inconsistent names usable in downstream analysis. This repo shows the matching approach with fictional names and a short fictional alias list. It contains no company code or data.
 
-The program cleans name variations, applies a short curated alias list, proposes similar known names for review, and groups a few remaining variants using blocking and direct comparison to a representative. It produces three CSVs: an alias map, a canonical list, and a review queue. A review suggestion stays separate until a person confirms it.
+| Input | Output | Decision |
+| --- | --- | --- |
+| `ASTER BK` | `ASTER BANK` | Known alias |
+| `Orion Fundng` | `ORION FUNDING` | Similar name in the same candidate group |
+| `Aster Banc` | `ASTER BANC` | Kept separate and sent for review |
 
-## Run locally
+The resolver first normalizes names and checks known aliases. It then scores possible matches to known creditors. Names that are close but uncertain stay separate in the review queue. For remaining names, it uses token, phonetic, and prefix/suffix keys to find candidates; each accepted cluster member must match its representative directly. Other names remain standalone.
 
-Python 3.10 or newer is enough; there are no third party dependencies.
+## Run the example
+
+Python 3.10 or newer; no packages to install.
 
 ```bash
 python3 creditor_standardization.py \
@@ -16,18 +22,6 @@ python3 creditor_standardization.py \
 python3 -m unittest discover -s tests -v
 ```
 
-Input names use `raw_name,row_count`. The alias file uses `alias,canonical_name`. Each valid distinct raw name has exactly one row in `alias_map.csv`, and `source_rows` reconcile across the input, alias map, and canonical output. Blank names and invalid counts fail validation rather than silently disappearing.
+The run writes `alias_map.csv`, `canonical_creditors.csv`, and `review_queue.csv`. With the included sample, 14 distinct input names map to 7 canonical names, with 1 review candidate. The 58 source rows reconcile across the input and outputs.
 
-## Matching decisions
-
-1. Normalize case, spacing, punctuation, selected short forms, and legal suffixes.
-2. Resolve known aliases exactly.
-3. Compare remaining names with known canonicals. Clear matches are assigned; borderline matches go to `review_queue.csv` and retain their own canonical name.
-4. Use token, phonetic, and edge keys to propose candidates among remaining names. A cluster member must directly pass the overlap, length, and similarity checks against its representative.
-5. Keep all other names as standalone entities.
-
-Similarity scores are heuristics, not measured probabilities of a correct match. The sample is for inspecting the workflow; it does not establish accuracy, throughput, or behavior at production scale. The Snowflake query in [`snowflake/example.sql`](snowflake/example.sql) shows how an exported alias map could be joined after loading it to a demo schema; it has not been executed against Snowflake.
-
-## Public scope
-
-The source work involved Snowflake creditor data. This independent portfolio implementation uses a short fictional seed list and a local CSV so the matching decisions and review boundary can be examined without access to that environment.
+This is a small public demonstration, not the production Snowflake pipeline. Similarity scores are ranking signals, not measured match probabilities or an accuracy claim.
