@@ -6,6 +6,7 @@ CREDITOR_REVIEW_QUEUE.
 """
 
 import csv
+import sys
 import time
 
 import db
@@ -13,6 +14,9 @@ from matching import COLUMNS, load_aliases, resolve
 
 
 def main():
+    if not db.ALIASES_CSV:
+        sys.exit("Set CREDITOR_ALIASES_CSV to your curated alias CSV "
+                 "(data/sample_aliases.csv for the demo).")
     start = time.time()
     conn = db.connect()
     try:

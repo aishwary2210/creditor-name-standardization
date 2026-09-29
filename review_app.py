@@ -52,23 +52,24 @@ def save_override(name, canonical):
     """, (name, canonical))
 
 
-def set_status(name, status):
-    db.query(conn, f"UPDATE {db.table(db.SUGGESTIONS)} SET STATUS = %s WHERE CURRENT_NAME = %s",
-             (status, name))
+def set_status(name, target, status):
+    db.query(conn, f"""
+        UPDATE {db.table(db.SUGGESTIONS)} SET STATUS = %s
+        WHERE CURRENT_NAME = %s AND SUGGESTED_CANONICAL = %s AND STATUS = 'pending'
+    """, (status, name, target))
 
 
 suggestions_tab, manual_tab, overrides_tab = st.tabs(["Suggestions", "Manual fix", "Approved"])
 
 with suggestions_tab:
-    try:
+    pending = pd.DataFrame()  # empty until suggest_merges.py has run
+    if db.table_exists(conn, db.SUGGESTIONS):
         pending = read(f"""
             SELECT CURRENT_NAME, SUGGESTED_CANONICAL, REASON, SOURCE_ROWS
             FROM {db.table(db.SUGGESTIONS)}
             WHERE STATUS = 'pending'
             ORDER BY SOURCE_ROWS DESC
         """)
-    except db.ProgrammingError:
-        pending = pd.DataFrame()  # suggest_merges.py has not been run yet
     if pending.empty:
         st.success("Nothing left to review.")
     else:
@@ -85,10 +86,10 @@ with suggestions_tab:
             right.write(f"→ {target}")
             if approve.button("Approve", key=f"approve_{i}"):
                 save_override(name, target)
-                set_status(name, "approved")
+                set_status(name, target, "approved")
                 st.rerun()
             if reject.button("Reject", key=f"reject_{i}"):
-                set_status(name, "rejected")
+                set_status(name, target, "rejected")
                 st.rerun()
 
 with manual_tab:
@@ -119,14 +120,13 @@ with manual_tab:
                     st.success(f"Saved {name} → {target}. It applies on the next pipeline run.")
 
 with overrides_tab:
-    try:
+    approved = pd.DataFrame()
+    if db.table_exists(conn, db.OVERRIDES):
         approved = read(f"""
             SELECT ORIGINAL_NAME, CANONICAL_NAME, APPROVED_BY, APPROVED_AT
             FROM {db.table(db.OVERRIDES)}
             ORDER BY APPROVED_AT DESC
         """)
-    except db.ProgrammingError:
-        approved = pd.DataFrame()
     if approved.empty:
         st.info("No approved overrides yet.")
     else:

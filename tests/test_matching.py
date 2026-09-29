@@ -104,6 +104,15 @@ class ClusterTests(unittest.TestCase):
 
 
 class SuggestTests(unittest.TestCase):
+    def test_already_decided_pairs_are_not_asked_again(self):
+        canonicals = [
+            {"canonical_name": "ASTER BANK", "tier": "VERIFIED", "source_rows": 2000},
+            {"canonical_name": "ASTER BANK AUTO", "tier": "STANDALONE", "source_rows": 40},
+            {"canonical_name": "ASTER BANK/RETAIL", "tier": "LOW_FREQUENCY", "source_rows": 6},
+        ]
+        found = suggest_merges(canonicals, [], decided=[("ASTER BANK AUTO", "ASTER BANK")])
+        self.assertEqual([s["current_name"] for s in found], ["ASTER BANK/RETAIL"])
+
     def test_rules(self):
         canonicals = [
             {"canonical_name": "ASTER BANK", "tier": "VERIFIED", "source_rows": 2000},

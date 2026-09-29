@@ -9,13 +9,12 @@ import os
 
 import pandas as pd
 import snowflake.connector
-from snowflake.connector.errors import ProgrammingError
 from snowflake.connector.pandas_tools import write_pandas
 
 DATABASE = os.getenv("SNOWFLAKE_DATABASE", "DEMO_DB").upper()
 SCHEMA = os.getenv("SNOWFLAKE_SCHEMA", "PUBLIC").upper()
 SOURCE_TABLE = os.getenv("CREDITOR_SOURCE_TABLE", f"{DATABASE}.{SCHEMA}.RAW_CREDITORS")
-ALIASES_CSV = os.getenv("CREDITOR_ALIASES_CSV", "data/sample_aliases.csv")
+ALIASES_CSV = os.getenv("CREDITOR_ALIASES_CSV")  # required for main.py; no default on purpose
 
 NORMALIZED = "CREDITORS_NORMALIZED"
 CANONICALS = "CANONICAL_CREDITORS"
@@ -51,12 +50,23 @@ def query(conn, sql, params=None):
         return cursor.fetchall()
 
 
+def table_exists(conn, name):
+    rows = query(conn, f"""
+        SELECT COUNT(*) FROM {DATABASE}.INFORMATION_SCHEMA.TABLES
+        WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s
+    """, (SCHEMA, name))
+    return rows[0][0] > 0
+
+
 def load_overrides(conn):
-    """Approved {normalized name: canonical} pairs from the review app, if any."""
-    try:
-        return dict(query(conn, f"SELECT ORIGINAL_NAME, CANONICAL_NAME FROM {table(OVERRIDES)}"))
-    except ProgrammingError:
-        return {}  # table is created the first time someone approves a merge
+    """Approved {normalized name: canonical} pairs from the review app.
+
+    The table only exists once someone approves a merge. Any other error is
+    raised, so a rebuild never runs without the approvals people made.
+    """
+    if not table_exists(conn, OVERRIDES):
+        return {}
+    return dict(query(conn, f"SELECT ORIGINAL_NAME, CANONICAL_NAME FROM {table(OVERRIDES)}"))
 
 
 def write_table(conn, name, rows, columns, replace):

@@ -220,7 +220,7 @@ def resolve(raw_counts, lookup, overrides=None):
     return Result(normalized, aliases, canonicals, review, candidate_pairs)
 
 
-def suggest_merges(canonicals, review):
+def suggest_merges(canonicals, review, decided=()):
     """Suggest merges for names the automatic steps left on their own.
 
     - prefix: starts with a verified multi-word name ("ASTER BANK AUTO" -> "ASTER BANK")
@@ -228,7 +228,11 @@ def suggest_merges(canonicals, review):
     - high_volume_prefix: an unverified name with 5,000+ rows is the prefix of a
       name with less than half its rows
     - near_match: fuzzy matches that were held for review
+
+    decided holds (name, suggested canonical) pairs a reviewer already approved
+    or rejected, so they are not asked again.
     """
+    decided = set(decided)
     verified = {c["canonical_name"] for c in canonicals if c["tier"] == "VERIFIED"}
     unverified = {c["canonical_name"]: c["source_rows"] for c in canonicals
                   if c["canonical_name"] not in verified}
@@ -246,23 +250,22 @@ def suggest_merges(canonicals, review):
     suggestions = {}
 
     def add(name, target, reason):
-        if name not in suggestions:
-            suggestions[name] = {"current_name": name, "suggested_canonical": target,
-                                 "reason": reason, "source_rows": unverified[name]}
+        if not target or name in suggestions or (name, target) in decided:
+            return False
+        suggestions[name] = {"current_name": name, "suggested_canonical": target,
+                             "reason": reason, "source_rows": unverified[name]}
+        return True
 
     for name, count in unverified.items():
-        target = longest_prefix(name, verified)
-        if target:
-            add(name, target, "prefix")
-            continue
         parts = [p.strip() for piece in name.split("/") for p in piece.split("&")]
-        target = next((p for p in parts if p in verified), None)
-        if target:
-            add(name, target, "split")
-            continue
-        target = longest_prefix(name, large)
-        if target and count < large[target] / 2:
-            add(name, target, "high_volume_prefix")
+        candidates = [(longest_prefix(name, verified), "prefix"),
+                      (next((p for p in parts if p in verified), None), "split")]
+        big = longest_prefix(name, large)
+        if big and count < large[big] / 2:
+            candidates.append((big, "high_volume_prefix"))
+        for target, reason in candidates:
+            if add(name, target, reason):
+                break
 
     for row in review:
         if row["normalized_name"] in unverified:

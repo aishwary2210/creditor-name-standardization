@@ -32,13 +32,18 @@ alias list are not included, and the sample data is made up.
 The matching code lives in [matching.py](matching.py) and doesn't know about Snowflake, so the
 local runner and the Snowflake scripts use exactly the same logic.
 
-## Results on the production data
+## Results at work
 
-- 11.9M rows and about 720K distinct names resolved into a canonical creditor lookup
-- Blocking cut candidate comparisons from about 259 billion possible pairs to about 10 million;
-  a full run took 5–15 minutes
+These come from the production version of this code, run on the real data:
+
+- 11.9M rows and about 720K distinct names resolved into one canonical creditor lookup
+- Blocking cut candidate comparisons from about 259 billion possible pairs to about 10 million
+- The full pipeline ran in 10–12 minutes
 - About 800 names went to the first review queue
 - The first merge-suggestion run found 19,906 suggestions covering 317K source rows
+
+The code in this repo has been restructured since then and tested on the sample data, not on the
+production tables.
 
 ## Try it locally
 
@@ -75,6 +80,7 @@ share a phonetic block, so they get compared, but they fail the word-overlap che
 ```bash
 pip install -r requirements.txt
 export SNOWFLAKE_ACCOUNT=... SNOWFLAKE_USER=... SNOWFLAKE_WAREHOUSE=... SNOWFLAKE_ROLE=...
+export CREDITOR_ALIASES_CSV=data/sample_aliases.csv   # or your own curated list
 python main.py            # full rebuild; replaces the output tables
 python suggest_merges.py  # writes CREDITOR_MERGE_SUGGESTIONS
 streamlit run review_app.py
@@ -84,8 +90,8 @@ python incremental.py     # later: add names that are new in the source
 Output goes to `DEMO_DB.PUBLIC` unless `SNOWFLAKE_DATABASE` / `SNOWFLAKE_SCHEMA` are set.
 The source table needs `COMPANY` and `_FIVETRAN_DELETED` columns; point `CREDITOR_SOURCE_TABLE`
 at yours, or create a small demo one with [snowflake/setup_demo.sql](snowflake/setup_demo.sql).
-The curated alias list is read from `CREDITOR_ALIASES_CSV` (the sample file by default).
-Login uses browser SSO unless `SNOWFLAKE_PASSWORD` is set.
+`main.py` stops if `CREDITOR_ALIASES_CSV` is not set, so a real run can't quietly use the sample
+aliases. Login uses browser SSO unless `SNOWFLAKE_PASSWORD` is set.
 
 | Table | Contents |
 | --- | --- |
