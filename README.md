@@ -17,13 +17,13 @@ alias list are not included, and the sample data is made up.
 2. **Look it up** in a curated alias list, plus any merges already approved in the review app.
 3. **Fuzzy match** the rest against known creditors with RapidFuzz. A score of 95+ is accepted,
    93–95 goes to a review queue, and if both names have 5,000+ rows a person always decides.
-   Incremental runs also hold any new 5,000+ row name for review because existing row counts
-   are refreshed only on a full rebuild.
+   In incremental runs, a new 5,000+ row name that fuzzy matches always goes to review, since
+   existing row counts are only refreshed by a full rebuild.
 4. **Cluster what's left.** Comparing every pair of 720K names would be about 259 billion
    comparisons, so names are only compared if they share a block key: the first word plus the
-   start of the second, a phonetic code of the first word, or the first and last four letters. Pairs also have to share
-   half their words, be within 2x in length, and score 90+ (Jaro-Winkler for short names, token
-   sort for longer ones). Each member has to match the group's most common name directly, so
+   start of the second, a phonetic code of the first word, or the first and last four letters.
+   Pairs also have to share half their words, be within 2x in length, and score 90+
+   (Jaro-Winkler for short names, token sort for longer ones). Each member has to match the group's most common name directly, so
    groups can't chain together.
 5. **Keep everything.** Names that match nothing become their own creditor, labeled `STANDALONE`
    (10+ rows) or `LOW_FREQUENCY`.
