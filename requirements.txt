@@ -1,7 +1,9 @@
-snowflake-connector-python[pandas]
-pandas
-polars
-rapidfuzz
-jellyfish
-cleanco
-streamlit
+# Matching (all you need for run_local.py and the tests)
+cleanco>=2.2
+jellyfish>=1.0
+rapidfuzz>=3.0
+
+# Snowflake scripts and review app
+pandas>=2.0
+snowflake-connector-python[pandas]>=3.0
+streamlit>=1.30
