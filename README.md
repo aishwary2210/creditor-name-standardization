@@ -1,27 +1,39 @@
 # Creditor name standardization
 
-At work, I built a Snowflake creditor lookup to make inconsistent names usable in downstream analysis. This repo shows the matching approach with fictional names and a short fictional alias list. It contains no company code or data.
+I built this workflow to turn inconsistent creditor names into a lookup that analysts could use in Snowflake. The source had 11.9 million records and about 720,000 distinct name strings. This repository contains sanitized versions of the VS Code scripts I used, plus a small local example. Credentials, company table names, source records, and the full curated alias list are excluded.
 
-| Input | Output | Decision |
-| --- | --- | --- |
-| `ASTER BK` | `ASTER BANK` | Known alias |
-| `Orion Fundng` | `ORION FUNDING` | Similar name in the same candidate group |
-| `Aster Banc` | `ASTER BANC` | Kept separate and sent for review |
+| File | Role |
+| --- | --- |
+| `main.py` | Normalize names, match known creditors, cluster remaining names, and write the canonical list, alias map, and review queue. |
+| `incremental.py` | Process new source names against the existing lookup. |
+| `suggest_merges.py` | Suggest additional merges for human review. |
+| `review_app.py` | Review suggestions and record manual overrides in Streamlit. |
+| `normalize.py`, `seed_aliases.py` | Shared name cleaning and a small fictional seed list. |
+| `config.py` | Connection settings from environment variables; no credentials in the repo. |
 
-The resolver first normalizes names and checks known aliases. It then scores possible matches to known creditors. Names that are close but uncertain stay separate in the review queue. For remaining names, it uses token, phonetic, and prefix/suffix keys to find candidates; each accepted cluster member must match its representative directly. Other names remain standalone.
+For example, `ASTER BK` maps to `ASTER BANK` through a known alias. `Orion Fundng` is close enough to `ORION FUNDING` to be grouped in the local sample. `Aster Banc` stays separate and appears in the review queue. A suggestion is not treated as a confirmed match until a person approves it.
 
-## Run the example
+## Try the local sample
 
-Python 3.10 or newer; no packages to install.
+The small example needs only Python 3.10 or newer:
 
 ```bash
-python3 creditor_standardization.py \
-  --input data/synthetic_creditors.csv \
-  --aliases data/synthetic_aliases.csv \
-  --output output
+python3 creditor_standardization.py --input data/synthetic_creditors.csv --aliases data/synthetic_aliases.csv --output output
 python3 -m unittest discover -s tests -v
 ```
 
-The run writes `alias_map.csv`, `canonical_creditors.csv`, and `review_queue.csv`. With the included sample, 14 distinct input names map to 7 canonical names, with 1 review candidate. The 58 source rows reconcile across the input and outputs.
+It writes `alias_map.csv`, `canonical_creditors.csv`, and `review_queue.csv`. The included fictional input has 14 distinct names and 58 source rows; it produces 7 canonical names and 1 review candidate.
 
-This is a small public demonstration, not the production Snowflake pipeline. Similarity scores are ranking signals, not measured match probabilities or an accuracy claim.
+## Snowflake scripts
+
+The Snowflake scripts need the packages in `requirements.txt`, a source table with `COMPANY` and `_FIVETRAN_DELETED` columns, and a schema where you can create output tables. `snowflake/example.sql` creates a fictional source table in a disposable `DEMO_DB.PUBLIC` schema. Set `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_ROLE`, `SNOWFLAKE_WAREHOUSE`, and `SNOWFLAKE_DATABASE`; `SNOWFLAKE_SCHEMA` and `CREDITOR_SOURCE_TABLE` are optional. Authentication defaults to browser sign-in. `SNOWFLAKE_PASSWORD` can be supplied through the environment when needed. See `config.py` before running: `main.py` replaces its output tables.
+
+```bash
+python3 -m pip install -r requirements.txt
+python3 main.py
+python3 incremental.py
+python3 suggest_merges.py
+streamlit run review_app.py
+```
+
+These scripts are provided to show the actual workflow and have not been rerun in a public Snowflake account. The local example is the runnable demonstration. Similarity scores help rank candidates; they are not measured match probabilities or an accuracy claim.

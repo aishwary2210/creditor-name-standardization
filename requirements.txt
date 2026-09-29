@@ -1,0 +1,7 @@
+snowflake-connector-python[pandas]
+pandas
+polars
+rapidfuzz
+jellyfish
+cleanco
+streamlit
