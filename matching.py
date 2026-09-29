@@ -48,7 +48,7 @@ class Result:
         lines = [
             f"{len(self.normalized):,} raw names -> {len(self.aliases):,} normalized names "
             f"-> {len(self.canonicals):,} canonical creditors",
-            f"{self.candidate_pairs:,} candidate pairs compared during clustering",
+            f"{self.candidate_pairs:,} candidate pairs generated during clustering",
             f"{len(self.review):,} names sent to review",
         ]
         lines += [f"  {tier:<14}{count:,}" for tier, count in sorted(tiers.items())]
@@ -147,12 +147,13 @@ def cluster(names, rows):
     return assigned, candidate_pairs
 
 
-def resolve(raw_counts, lookup, overrides=None):
+def resolve(raw_counts, lookup, overrides=None, review_large_new_names=False):
     """Map every raw name to exactly one canonical creditor.
 
     raw_counts: {raw name: source rows}
     lookup:     {normalized name: canonical name} from the curated alias list
     overrides:  {normalized name: canonical name} approved in the review app
+    review_large_new_names: hold all high-volume new names when existing counts may lag
     """
     overrides = overrides or {}
     known = {**lookup, **overrides}
@@ -183,7 +184,8 @@ def resolve(raw_counts, lookup, overrides=None):
             unmatched.append(name)
             continue
         canonical, score = match[0], round(match[1], 1)
-        high_volume = rows[name] >= HIGH_VOLUME_ROWS and known_rows[canonical] >= HIGH_VOLUME_ROWS
+        high_volume = rows[name] >= HIGH_VOLUME_ROWS and (
+            known_rows[canonical] >= HIGH_VOLUME_ROWS or review_large_new_names)
         if score >= AUTO_ACCEPT and not high_volume:
             decisions[name] = (canonical, "FUZZY", score)
         else:
@@ -238,7 +240,7 @@ def plan_incremental(raw_counts, canonicals, mapped, queued, overrides=None):
     ids = {name: cid for cid, name, _ in canonicals}
     # Curated creditors can match even if no source name maps to them yet.
     lookup = {**{name: name for _, name, tier in canonicals if tier == "VERIFIED"}, **mapped}
-    result = resolve(raw_counts, lookup, overrides)
+    result = resolve(raw_counts, lookup, overrides, review_large_new_names=True)
 
     next_id = max(ids.values(), default=0) + 1
     new_canonicals = []

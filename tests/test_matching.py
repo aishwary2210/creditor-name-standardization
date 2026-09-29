@@ -137,6 +137,16 @@ class IncrementalTests(unittest.TestCase):
         self.assertEqual(aliases["NORTHWIND KAPITOL"]["tier"], "REVIEW")
         self.assertEqual(len(tables["review"]), len(self.start["review"]) + 1)
 
+    def test_large_new_name_waits_for_review_during_incremental_run(self):
+        plan = plan_incremental(
+            {"Capital One Banks": 6000},
+            [(1, "CAPITAL ONE BANK", "VERIFIED")],
+            {"CAPITAL ONE BANK": "CAPITAL ONE BANK"},
+            set(),
+        )
+        self.assertEqual(plan["aliases"][0]["tier"], "REVIEW")
+        self.assertEqual(plan["review"][0]["suggested_canonical"], "CAPITAL ONE BANK")
+
     def test_rerun_after_any_failed_write_matches_a_clean_run(self):
         clean = dict(self.start)
         self.run_incremental(clean)
